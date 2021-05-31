@@ -7,7 +7,6 @@ function setup() {
 	game = new Game();
 	game.setup();
 
-	
 }
 
 function draw() {
@@ -21,6 +20,16 @@ function draw() {
 
 function windowResized() {
 	resizeCanvas(innerWidth, innerHeight);
+}
+
+function mouseWheel(event) {
+	let toBottom = event.wheelDeltaY < 0;
+	if (toBottom) {
+		game.camera.scrollZoom += 1000;
+	}else{
+		game.camera.scrollZoom -= 1000;
+	}
+	game.camera.scrollZoom = constrain(game.camera.scrollZoom, -9000, 9000)
 }
 
 /*

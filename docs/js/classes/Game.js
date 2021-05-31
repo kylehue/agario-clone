@@ -6,6 +6,7 @@ class Game {
 			moveTransitionSpeed: 0.3,
 			zoomTransitionSpeed: 0.1
 		});
+		this.camera.scrollZoom = 0;
 		this.world = new World;
 	}
 
@@ -16,7 +17,7 @@ class Game {
 
 		this.world.players.push(new Player);
 
-		const foodCount = this.world.size / 14;
+		const foodCount = this.world.size / 4;
 		for (var j = 0; j < foodCount; j++) {
 			this.world.addFood();
 		}
@@ -27,7 +28,8 @@ class Game {
 		const player = this.world.players[0];
 		const center = Game.utils.getCenter(player.cells);
 		this.camera.moveTo(center.x, center.y);
-		this.camera.zoomTo(Game.utils.massToScale(player.totalMass));
+		const zoom = Game.utils.massToScale(player.totalMass);
+		this.camera.zoomTo(zoom + this.camera.scrollZoom);
 		this.world.render();
 		this.camera.end();
 	}
@@ -42,11 +44,13 @@ Game.config = {
 	minMass: 20,
 	maxSpeed: 10,
 	minSpeed: 1,
+	ejectMass: 20,
 	scale: 1,
 	resolution: {
 		width: 1920,
 		height: 1080
-	}
+	},
+	blobSoftness: 5
 }
 
 Game.utils = {

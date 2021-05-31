@@ -1,9 +1,13 @@
 class Food {
 	constructor(position) {
 		this.position = position;
-		this.mass = 2;
+		this.velocity = createVector();
+		this.acceleration = createVector();
+		this.mass = 3;
+		this.speed = Game.utils.massToSpeed(this.mass);
 		this.radius = Game.utils.massToRadius(this.mass);
 		this.color = Game.utils.getRandomColor();
+		this.eaten = false;
 	}
 
 	render() {
@@ -12,6 +16,12 @@ class Food {
 		beginShape();
 		circle(this.position.x, this.position.y, this.radius * 2);
 		endShape();
+	}
+
+	update() {
+		this.velocity.add(this.acceleration);
+		this.velocity.limit(this.speed);
+		this.position.add(this.velocity);
 	}
 
 	addToQuadtree(quadtree) {
