@@ -11,15 +11,23 @@ class Game {
 	}
 
 	setup() {
-		let center = this.camera.worldToScreen(0, 0);
-		mouseX = center.x;
-		mouseY = center.y;
+		//Add players
+		for (var i = 0; i < 50; i++) {
+			this.world.players.push(new Player);
+		}
 
-		this.world.players.push(new Player);
-
-		const foodCount = this.world.size / 4;
+		//Add foods
+		const foodCount = sqrt(pow(this.world.size, 1.5));
 		for (var j = 0; j < foodCount; j++) {
 			this.world.addFood();
+		}
+
+		//Add viruses
+		const virusCount = sqrt(pow(this.world.size, 0.7));
+		for (var j = 0; j < virusCount; j++) {
+			this.world.addVirus({
+				position: this.world.getRandomPosition()
+			});
 		}
 	}
 
@@ -45,25 +53,33 @@ Game.config = {
 	maxSpeed: 10,
 	minSpeed: 1,
 	ejectMass: 20,
-	scale: 1,
+	maxCells: 16,
+	scale: 0.5,
 	resolution: {
 		width: 1920,
 		height: 1080
-	},
-	blobSoftness: 5
+	}
 }
 
 Game.utils = {
 	massToRadius: function(mass) {
-		return sqrt(mass * (Game.config.scale * 100))
+		return sqrt(mass * (Game.config.scale * 100));
 	},
 	massToSpeed: function(mass) {
-		return 2.2 * pow(mass / (Game.config.scale * 100), -0.319)
+		return 4.2 * pow(mass / (Game.config.scale * 100), -0.319);
 	},
-	massToScale: function (mass) {
+	massToSplitSpeed: function(mass) {
+		const radius = this.massToRadius(mass);
+		const maxSpeed = sqrt(pow(radius, 1.62));
+		return map(radius, this.massToRadius(Game.config.minMass), this.massToRadius(Game.config.maxMass) + (radius / 2), maxSpeed, 1) + map(radius, Game.utils.massToRadius(Game.config.minMass), Game.utils.massToRadius(Game.config.maxMass) + (radius / 2), 40, 0);
+	},
+	massToScale: function(mass) {
 		const scaleBasis = pow(min(64 / mass, 1), 0.4);
 		const scale = scaleBasis * this.getRatio();
 		return ((50 * this.massToRadius(mass) + scale) / 10) + 500;
+	},
+	massToMergeTime: function(mass) {
+		return sqrt(mass) * 3000;
 	},
 	getRandomColor: function() {
 		const colors = ["#eb3d3d", "#eb663d", "#eb943d", "#ebd43d", "#bdeb3d", "#71eb3d", "#3deb6e", "#3debbd", "#3dcbeb", "#3d80eb", "#3d49eb", "#833deb", "#cb3deb", "#eb3dce", "#eb3d88", "#eb3d5a"];
@@ -73,7 +89,7 @@ Game.utils = {
 		offset = offset || 0;
 		return position.x + offset > viewport.left && position.x - offset < viewport.right && position.y + offset > viewport.top && position.y - offset < viewport.bottom;
 	},
-	getCenter: function (cells) {
+	getCenter: function(cells) {
 		let total = 0;
 		let sumX = 0;
 		let sumY = 0;

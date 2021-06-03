@@ -7,67 +7,65 @@ class Player {
 		this.color = Game.utils.getRandomColor();
 
 		this.totalMass = 0;
-		/*this.addCell({
-			position: this.position,
-			mass: 22500
-		});
-
 		this.addCell({
 			position: this.position,
-			mass: 12250
-		});*/
-
-		this.addCell({
-			position: this.position,
-			mass: 150
+			mass: Game.config.minMass
 		});
-	}
-
-	addCell(options) {
-		/*let radius = Game.utils.massToRadius(mass);
-		for (var j = 0; j < this.cells.length; j++) {
-			let cell = this.cells[j];
-			if (cell.getDistance(position) <= cell.radius + radius) {
-				position = game.world.getRandomPosition();
-				j = 0;
-			}
-		}*/
-		game.world.cells.push(new Cell(this, options));
-	}
-
-	checkActions() {
-		if (keyIsPressed) {
-			if (keyCode == 32) {
-				for (let cell of this.cells) {
-					cell.split();
-				}
-			}
-			keyIsPressed = false;
-		}
-
-		if (keyIsDown(87)) {
-			for (let cell of this.cells) {
-				cell.eject();
-			}
-		}
 	}
 
 	update() {
-		//Update cells
-		let playerCells = [];
-		for (let cell of game.world.cells) {
-			if (cell.player == this) playerCells.push(cell);
-		}
-
-		this.cells = playerCells;
-
 		let totalMass = 0;
 		for (let cell of this.cells) {
 			cell.update();
 			totalMass += cell.mass;
 		}
 
+		//Game over
+		if (!this.cells.length) {
+			//Respawn
+			this.position = game.world.getRandomPosition();
+			this.addCell({
+				position: this.position,
+				mass: Game.config.minMass
+			});
+		}
+
 		this.totalMass = totalMass;
 		this.checkActions();
+	}
+
+	checkActions() {
+		if (keyIsPressed) {
+			if (keyCode == 32) {
+				this.split();
+			}
+		}
+
+		if (keyIsDown(87)) {
+			this.eject();
+		}
+	}
+
+	split() {
+		for (var i = this.cells.length - 1; i >= 0; i--) {
+			if (this.cells.length < Game.config.maxCells) {
+				this.cells[i].split();
+			}
+		}
+	}
+
+	eject() {
+		for (var i = this.cells.length - 1; i >= 0; i--) {
+			const cell = this.cells[i];
+			if (cell.mass > 30) {
+				cell.eject();
+			}
+		}
+	}
+
+	addCell(options) {
+		const cell = new Cell(this, options);
+		this.cells.push(cell);
+		return cell;
 	}
 }

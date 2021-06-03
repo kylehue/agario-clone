@@ -28,15 +28,17 @@ class World {
 		this.quadtrees = {
 			cell: new Quadtree(quadtreeBounds, 6, 4),
 			food: new Quadtree(quadtreeBounds, 6, 6),
-			pellet: new Quadtree(quadtreeBounds, 2, 6)
+			pellet: new Quadtree(quadtreeBounds, 4, 4),
+			virus: new Quadtree(quadtreeBounds, 8, 4)
 		}
 
 		this.players = [];
 		this.foods = [];
 		this.pellets = [];
 		this.cells = [];
+		this.viruses = [];
 
-		this.color = "#262930";
+		this.color = "#1d1f25";
 	}
 
 	render() {
@@ -47,6 +49,23 @@ class World {
 		rect(this.bounds.min.x, this.bounds.min.y, this.bounds.width, this.bounds.height);
 		endShape();
 
+		//Draw the grid
+		noFill();
+		stroke(255, 10);
+		strokeWeight(1);
+		let size = map(game.camera.distance, 0, 10000, 100, 1000);
+		let count = this.size / size;
+		beginShape();
+		for (var i = -floor(count); i < floor(count); i++) {
+			let pos = i * (size / 2);
+			//Vertical Lines
+			if (Game.utils.isVisible(game.camera.viewport, {x: pos, y: game.camera.movement.y})) line(pos, -this.size / 2, pos, this.size / 2);
+
+			//Horizontal Lines
+			if (Game.utils.isVisible(game.camera.viewport, {x: game.camera.movement.x, y: pos})) line(-this.size / 2, pos, this.size / 2, pos);
+		}
+		endShape();
+
 		//Order rendering by mass
 		let allCells = this.cells.slice().sort((a, b) => a.mass - b.mass);
 		for (let cell of allCells) {
@@ -55,49 +74,42 @@ class World {
 	}
 
 	update() {
-		//Add foods from this.cells to this.foods
-		let foods = [];
-		for (let cell of this.cells) {
-			if (cell instanceof Food) {
-				foods.push(cell);
-			}
-		}
-
-		this.foods = foods;
-
-		//Add pellets from this.cells to this.pellets
-		let pellets = [];
-		for (let cell of this.cells) {
-			if (cell instanceof Pellet) {
-				pellets.push(cell);
-			}
-		}
-
-		this.pellets = pellets;
-
 		//Add each cells to their quadtree
 		for (let cell of this.cells) {
 			if (cell instanceof Cell) {
 				cell.addToQuadtree(this.quadtrees.cell);
 			}else if (cell instanceof Pellet) {
 				cell.addToQuadtree(this.quadtrees.pellet);
+			}else if (cell instanceof Virus) {
+				cell.addToQuadtree(this.quadtrees.virus);
 			}else if (cell instanceof Food) {
 				cell.addToQuadtree(this.quadtrees.food);
 			}
 		}
 
-		//Update
+		//Update <this.cells>
+		let allCells = [];
 		for (let player of this.players) {
 			player.update();
-		}
-
-		for (let pellet of this.pellets) {
-			pellet.update();
+			allCells.push(...player.cells);
 		}
 
 		for (let food of this.foods) {
 			food.update();
+			allCells.push(food);
 		}
+
+		for (let pellet of this.pellets) {
+			pellet.update();
+			allCells.push(pellet);
+		}
+
+		for (let virus of this.viruses) {
+			virus.update();
+			allCells.push(virus);
+		}
+
+		this.cells = allCells;
 
 		//Clear quadtrees
 		let quadtrees = Object.values(this.quadtrees);
@@ -107,11 +119,17 @@ class World {
 	}
 
 	addFood() {
-		this.cells.push(new Food(this.getRandomPosition()));
+		this.foods.push(new Food(this.getRandomPosition()));
+	}
+
+	addVirus(options) {
+		options = options || {};
+		options.position = undefined == options.position ? this.getRandomPosition() : options.position;
+		this.viruses.push(new Virus(options));
 	}
 
 	addPellet(cell, target) {
-		this.cells.push(new Pellet(cell, target));
+		this.pellets.push(new Pellet(cell, target));
 	}
 
 	getRandomPosition() {

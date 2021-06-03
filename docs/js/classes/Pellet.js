@@ -3,11 +3,12 @@ class Pellet {
 		this.cell = cell;
 		this.target = target;
 		this.angle = atan2(this.target.y - cell.position.y, this.target.x - cell.position.x);
-		this.position = createVector(this.cell.position.x + cos(this.angle) * this.cell.radius, this.cell.position.y + sin(this.angle) * this.cell.radius);
-		this.speed = 100;
-		this.velocity = createVector(cos(this.angle) * this.speed, sin(this.angle) * this.speed);
 		this.mass = Game.config.ejectMass;
 		this.radius = Game.utils.massToRadius(this.mass);
+		const rand = random(-0.01, 0.01);
+		this.position = createVector(this.cell.position.x + cos(this.angle + rand) * (this.cell.radius - this.radius), this.cell.position.y + sin(this.angle + rand) * (this.cell.radius - this.radius));
+		this.speed = 100;
+		this.velocity = createVector(cos(this.angle) * this.speed, sin(this.angle) * this.speed);
 		this.color = this.cell.color;
 		this.eaten = false;
 	}

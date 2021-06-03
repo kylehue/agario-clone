@@ -1,3 +1,8 @@
+/*
+Needs fix:
+-Mass gets a little bit lower when you spam split while ejecting pellets
+*/
+
 class Cell {
 	constructor(player, options) {
 		options = options || {};
@@ -15,12 +20,15 @@ class Cell {
 
 		//Size
 		this.mass = options.mass || Game.config.minMass;
-		this.newMass = this.mass;
+		this.newMass = 0;
 		this.radius = Game.utils.massToRadius(this.mass);
+
+		//Timers
+		this.lastEject = 0;
+		this.splitTime = new Date().getTime();
 
 		//Appearance
 		this.vertices = [];
-
 		this.color = color(this.player.color).levels;
 	}
 
@@ -34,7 +42,7 @@ class Cell {
 		endShape();*/
 
 		fill(this.color[0], this.color[1], this.color[2]);
-		stroke(this.color[0] * 0.8, this.color[1] * 0.8, this.color[2] * 0.8);
+		noStroke();
 		strokeWeight(6);
 		/*beginShape();
 		for (let vert of this.vertices) {
@@ -51,13 +59,13 @@ class Cell {
 		endShape()
 
 		//Draw texts
-		/*stroke(50);
+		stroke(50);
 		strokeWeight(4);
 		fill(255);
 		textFont("verdana");
 
 		//Mass
-		textAlign(CENTER, TOP);
+		/*textAlign(CENTER, TOP);
 		const massText = int(this.mass).toString();
 		const massTextSize = this.radius / 4;
 		textSize(massTextSize);
@@ -70,18 +78,8 @@ class Cell {
 	}
 
 	update() {
-		this.radius = Game.utils.massToRadius(this.mass);
+		//Head towards the target in high speed if this cell is ejected by another cell
 		this.speed = Game.utils.massToSpeed(this.mass);
-		this.mass = lerp(this.mass, this.newMass, 0.15);
-
-		//Update vertices if mass changes or velocity is high
-		let buffer = 0.0001;
-		if (this.mass < this.newMass - 1) {
-
-		}
-
-		this.velocity.limit(this.speed);
-
 		if (this.splitDir.target) {
 			this.splitDir.target.x *= 0.9;
 			this.splitDir.target.y *= 0.9;
@@ -90,26 +88,57 @@ class Cell {
 			this.velocity.add(this.splitDir.target.x, this.splitDir.target.y);
 		}
 
+		//Handle collision
 		if (this.splitDir.time) {
-			if (new Date().getTime() - this.splitDir.time > this.radius * 2) {
+			if (new Date().getTime() - this.splitDir.time > pow(this.splitSpeed, 2)) {
 				this.handleCellCollision();
 			}
 		}
 
+		//Update size
+		this.radius = Game.utils.massToRadius(this.mass);
+
+		//Update movement
 		this.velocity.add(this.acceleration);
+		this.velocity.limit(this.speed);
 		this.position.add(this.velocity);
 
+		//Decrease mass over time
+		this.mass *= 0.9999;
 
-		this.animateVertices();
+		//Force split if the mass reaches max
+		if (this.mass > Game.config.maxMass) {
+			if (this.player.cells.length < Game.config.maxCells) {
+				const angle = random(-PI, PI);
+				let speed = Game.utils.massToSplitSpeed(this.mass);
+				const target = {
+					x: cos(angle) * speed,
+					y: sin(angle) * speed
+				};
+
+				this.split({
+					parent: this,
+					target: target,
+					time: new Date().getTime()
+				});
+			} else {
+				this.mass = Game.config.maxMass;
+			}
+		}
+
+		//
 		this.followMouse();
+		this.animateVertices();
+		this.handleVirusCollision();
 		this.handleFoodCollision();
 		this.handlePelletCollision();
+		this.handleEnemyCellCollision();
 		this.handleWallCollision();
 	}
 
 	animateVertices() {
-		const maxSides = 35;
-		const waveThreshold = this.radius / 20;
+		const maxSides = sqrt(this.radius);
+		const waveThreshold = sqrt(this.radius);
 		if (!this.vertices.length) {
 			for (var i = 0; i <= maxSides; i++) {
 				let position = {
@@ -124,49 +153,78 @@ class Cell {
 		//Add vertices if the radius gets bigger
 		const sides = maxSides + pow(this.mass, 0.218);
 		if (this.vertices.length < sides) {
+			//Get 2 vertices that has the longest distance between each other. The vertex that's going to be added will be before the <nextVertex>
 			const randomVertex = this.vertices[floor(random(this.vertices.length))];
-			const randomVertexAngle = atan2(this.position.y - this.position.y + randomVertex.y, this.position.x - this.position.x + randomVertex.x);
+			let longestDistance = 0;
+			let chosenVertex = randomVertex;
+			for (let vert of this.vertices) {
+				const nextVertex = this.vertices[(this.vertices.indexOf(vert) + 1) % this.vertices.length];
+				const distance = dist(vert.x, vert.y, nextVertex.x, nextVertex.y);
+				if (distance > longestDistance) {
+					longestDistance = distance;
+					chosenVertex = nextVertex;
+				}
+			}
+
+			const chosenVertexAngle = atan2(this.position.y - this.position.y + chosenVertex.y, this.position.x - this.position.x + chosenVertex.x);
+			const currentRadius = dist(this.position.x, this.position.y, this.position.x + chosenVertex.x, this.position.y + chosenVertex.y);
 			const position = {
-				x: cos(randomVertexAngle) * this.radius,
-				y: sin(randomVertexAngle) * this.radius,
+				x: cos(chosenVertexAngle) * currentRadius,
+				y: sin(chosenVertexAngle) * currentRadius,
 				angularVelocity: random(waveThreshold)
 			}
-			this.vertices.splice(this.vertices.indexOf(randomVertex), 0, position);
+
+			//Add
+			this.vertices.splice(this.vertices.indexOf(chosenVertex), 0, position);
 		}
 
 		//Remove vertices if the radius gets smaller
 		if (this.vertices.length - 1 > sides) {
-			this.vertices.splice(floor(random(this.vertices.length)), 1);
+			//Get 2 vertices that has the shortest distance between each other
+			const randomVertex = this.vertices[floor(random(this.vertices.length))];
+			let shortestDistance = Infinity;
+			let chosenVertex = randomVertex;
+			for (let vert of this.vertices) {
+				const nextVertex = this.vertices[(this.vertices.indexOf(vert) + 1) % this.vertices.length];
+				const distance = dist(vert.x, vert.y, nextVertex.x, nextVertex.y);
+				if (distance < shortestDistance) {
+					shortestDistance = distance;
+					chosenVertex = nextVertex;
+				}
+			}
+
+			//Remove
+			this.vertices.splice(this.vertices.indexOf(chosenVertex), 1);
 		}
 
-		//Update vertices' position IF the radius changes
+		//Update vertices' position if the radius changes
 		for (let vert of this.vertices) {
 			const angle = atan2(this.position.y - this.position.y + vert.y, this.position.x - this.position.x + vert.x);
 			const distance = dist(this.position.x, this.position.y, this.position.x + vert.x, this.position.y + vert.y);
-			let lerpSpeed = map(distance, Game.utils.massToRadius(this.mass), Game.utils.massToRadius(this.newMass) + 1, 1, 0);
-			lerpSpeed = constrain(lerpSpeed, 0.1, 1);
+			let lerpSpeed = map(distance, Game.utils.massToRadius(this.mass), Game.utils.massToRadius(this.mass) + 1, 0.4, 0);
+			lerpSpeed = constrain(lerpSpeed, 0.2, 0.4);
 			vert.x = lerp(vert.x, cos(angle) * this.radius, lerpSpeed);
 			vert.y = lerp(vert.y, sin(angle) * this.radius, lerpSpeed);
 			if (lerpSpeed > 0.2) vert.angularVelocity = random(waveThreshold);
 		}
 
-		//Vertex animation
+		//Fix vertices' position whenever there's a new vertex
 		for (let vert of this.vertices) {
-			//Wave effect
-			const hardness = map(this.radius, Game.utils.massToRadius(Game.config.minMass), Game.utils.massToRadius(Game.config.maxMass), 2, 0.6);
-			vert.x += cos(frameCount / vert.angularVelocity) / hardness;
-			vert.y += sin(frameCount / vert.angularVelocity) / hardness;
-
-			//Spin to achieve the blobby effect
-			//Also fixes vertices' position whenever there's a new vertex
 			const nextVertex = this.vertices[(this.vertices.indexOf(vert) + 1) % this.vertices.length];
 			const distance = dist(vert.x, vert.y, nextVertex.x, nextVertex.y);
 			const maxDistance = TAU * this.radius / this.vertices.length;
 			const reconstructSpeed = map(distance, 0, maxDistance, 0.1, 10);
-			const spinSpeed = map(this.radius, Game.utils.massToRadius(Game.config.minMass), Game.utils.massToRadius(Game.config.maxMass), 0.01, 0.4);
+			const spinSpeed = map(distance, Game.utils.massToRadius(Game.config.minMass), Game.utils.massToRadius(Game.config.maxMass), 0.3, 0.05);
 			const angle = atan2(nextVertex.y - vert.y, nextVertex.x - vert.x);
 			vert.x += cos(angle) * (reconstructSpeed * spinSpeed);
 			vert.y += sin(angle) * (reconstructSpeed * spinSpeed);
+		}
+
+		//Wave effect
+		for (let vert of this.vertices) {
+			const hardness = sqrt(pow(this.radius, 0.05));
+			vert.x += cos(frameCount / vert.angularVelocity) / hardness;
+			vert.y += sin(frameCount / vert.angularVelocity) / hardness;
 		}
 	}
 
@@ -193,22 +251,51 @@ class Cell {
 			height: this.radius * 2
 		});
 
-		//Own cells
 		for (let cell of objects) {
 			cell = cell.self;
-			if (cell != this && cell.player == this.player) {
+			if (cell.player == this.player) {
+				if (cell != this) {
+					if (this.collides(cell)) {
+						//Check if the 2 cells can merge
+						if (new Date().getTime() - this.splitTime > Game.utils.massToMergeTime(this.mass) && new Date().getTime() - cell.splitTime > Game.utils.massToMergeTime(cell.mass)) {
+							this.merge(cell);
+						} else {
+							if (this.getDistance(cell.position) < this.radius + cell.radius) {
+								const distance = this.getDistance(cell.position);
+								const overlap = distance - this.radius - cell.radius;
+								const angle = atan2(cell.position.y - this.position.y, cell.position.x - this.position.x);
+								const softness = 5;
+								const cellAForce = map(this.mass, Game.config.minMass, cell.mass, 1, softness);
+								const cellBForce = map(cell.mass, Game.config.minMass, this.mass, 1, softness);
+								const threshold = 0.1;
+								this.position.x += cos(angle) * overlap / (cellAForce - threshold);
+								this.position.y += sin(angle) * overlap / (cellAForce - threshold);
+								cell.position.x -= cos(angle) * overlap / (cellBForce + threshold);
+								cell.position.y -= sin(angle) * overlap / (cellBForce + threshold);
+							}
+						}
+
+					}
+				}
+			}
+		}
+	}
+
+	handleEnemyCellCollision() {
+		const objects = game.world.quadtrees.cell.retrieve({
+			x: this.position.x - this.radius,
+			y: this.position.y - this.radius,
+			width: this.radius * 2,
+			height: this.radius * 2
+		});
+
+		for (let cell of objects) {
+			cell = cell.self;
+			if (cell.player != this.player) {
 				if (this.collides(cell)) {
-					if (this.getDistance(cell.position) < this.radius + cell.radius) {
-						const distance = this.getDistance(cell.position);
-						const overlap = distance - this.radius - cell.radius;
-						const angle = atan2(cell.position.y - this.position.y, cell.position.x - this.position.x);
-						const cellAForce = map(this.mass, Game.config.minMass, cell.mass, 1, Game.config.blobSoftness);
-						const cellBForce = map(cell.mass, Game.config.minMass, this.mass, 1, Game.config.blobSoftness);
-						const threshold = 0.1;
-						this.position.x += cos(angle) * overlap / (cellAForce - threshold);
-						this.position.y += sin(angle) * overlap / (cellAForce - threshold);
-						cell.position.x -= cos(angle) * overlap / (cellBForce + threshold);
-						cell.position.y -= sin(angle) * overlap / (cellBForce + threshold);
+					const distance = this.getDistance(cell.position);
+					if (distance < this.radius) {
+						this.eat(cell);
 					}
 				}
 			}
@@ -229,7 +316,6 @@ class Cell {
 				let distance = this.getDistance(food.position);
 				if (distance < this.radius) {
 					this.eat(food);
-					break;
 				}
 			}
 		}
@@ -249,7 +335,6 @@ class Cell {
 				let distance = this.getDistance(pellet.position);
 				if (distance < this.radius) {
 					this.eat(pellet);
-					break;
 				}
 			}
 		}
@@ -272,39 +357,103 @@ class Cell {
 		}
 	}
 
-	split() {
-		const mass = this.newMass / 2;
-		if (mass > Game.config.minMass) {
-			this.newMass -= mass;
+	handleVirusCollision() {
+		const objects = game.world.quadtrees.virus.retrieve({
+			x: this.position.x - this.radius,
+			y: this.position.y - this.radius,
+			width: this.radius * 2,
+			height: this.radius * 2
+		});
+
+		for (let virus of objects) {
+			virus = virus.self;
+			if (this.collides(virus)) {
+				let distance = this.getDistance(virus.position);
+				if (distance < this.radius) {
+					this.eat(virus);
+				}
+			}
+		}
+	}
+
+	split(splitDir) {
+		if (this.mass / 2 > Game.config.minMass) {
 			const mouse = game.camera.screenToWorld(mouseX, mouseY);
 			const angle = atan2(mouse.y - this.position.y, mouse.x - this.position.x);
-			const maxSpeed = sqrt(pow(this.radius, 1.62));
-			const speed = map(this.radius, Game.utils.massToRadius(Game.config.minMass), Game.utils.massToRadius(Game.config.maxMass) + (this.radius / 2), maxSpeed, 1) + 20;
+			const speed = Game.utils.massToSplitSpeed(this.mass);
 			const target = {
 				x: cos(angle) * speed,
 				y: sin(angle) * speed
 			};
-			this.player.addCell({
+			this.mass /= 2;
+			let newCell = this.player.addCell({
 				position: createVector(
 					this.position.x + cos(angle),
 					this.position.y + sin(angle)
 				),
-				mass: mass,
-				splitDir: {
+				mass: this.mass,
+				splitDir: splitDir || {
 					parent: this,
 					target: target,
 					time: new Date().getTime()
 				}
 			});
+
+			this.splitTime = new Date().getTime();
+			newCell.splitTime = new Date().getTime();
+			return newCell;
+		}
+	}
+
+	merge(cell) {
+		const distance = dist(this.position.x, this.position.y, cell.position.x, cell.position.y);
+		if (distance < this.radius) {
+			this.mass += cell.mass;
+			cell.player.cells.splice(cell.player.cells.indexOf(cell), 1);
+		}
+	}
+
+	pop() {
+		const splitCount = this.mass <= 182 ? 8 : 16;
+		let popCount = 1;
+		for (var i = 0; i < splitCount; i++) {
+			if (this.player.cells.length < Game.config.maxCells) {
+				popCount++;
+			}
+		}
+
+		const mass = this.mass / abs(Game.config.maxCells - this.player.cells.length + 1);
+		if (this.player.cells.length < Game.config.maxCells) this.player.cells.splice(this.player.cells.indexOf(this), 1);
+		for (var i = 0; i < splitCount; i++) {
+			if (this.player.cells.length < Game.config.maxCells) {
+				const angle = random(-PI, PI);
+				let speed = Game.utils.massToSplitSpeed(mass);
+				speed = random(-speed, speed);
+				const target = {
+					x: cos(angle) * speed,
+					y: sin(angle) * speed
+				};
+
+				this.player.addCell({
+					position: this.position,
+					mass: max(mass, Game.config.minMass + 1),
+					splitDir: {
+						parent: this,
+						target: target,
+						time: new Date().getTime()
+					}
+				});
+			}
 		}
 	}
 
 	eject() {
-		const mass = this.newMass - Game.config.ejectMass;
-		if (mass > Game.config.minMass) {
-			this.newMass -= Game.config.ejectMass;
+		const mass = this.mass - Game.config.ejectMass;
+		if (mass > Game.config.minMass && new Date().getTime() - this.lastEject > 30) {
 			const mouse = game.camera.screenToWorld(mouseX, mouseY);
 			game.world.addPellet(this, createVector(mouse.x, mouse.y));
+			this.mass -= Game.config.ejectMass;
+			this.lastEject = new Date().getTime();
 		}
 	}
 
@@ -327,16 +476,38 @@ class Cell {
 	}
 
 	eat(cell) {
-		if (this.radius * 0.82 > cell.radius) {
-			if (!cell.eaten) this.newMass += cell.mass;
+		if (this.mass * 0.82 > cell.mass && this.getDistance(cell.position) < this.radius - cell.radius / 4) {
+			if (!cell.eaten) {
+				//Add mass
+				this.mass += cell.mass;
+
+				//Remove immediately if it's a virus or a player cell
+				if (cell instanceof Virus) {
+					game.world.addVirus();
+					game.world.viruses.splice(game.world.viruses.indexOf(cell), 1);
+					this.pop();
+				}
+
+				if (cell instanceof Cell) {
+					cell.player.cells.splice(cell.player.cells.indexOf(cell), 1);
+				}
+			}
+
 			const distance = this.getDistance(cell.position);
-			const lerpSpeed = map(distance, 0, this.radius + cell.radius, 0.4, 0.03)
+			const lerpSpeed = map(distance, 0, this.radius + cell.radius, 0.5, 0.01);
 			cell.speed = cell.radius;
 			cell.position.x = lerp(cell.position.x, this.position.x, lerpSpeed)
 			cell.position.y = lerp(cell.position.y, this.position.y, lerpSpeed)
 
 			if (distance <= this.radius - cell.radius) {
-				game.world.cells.splice(game.world.cells.indexOf(cell), 1);
+				if (cell instanceof Food) {
+					game.world.addFood();
+					game.world.foods.splice(game.world.foods.indexOf(cell), 1);
+				}
+
+				if (cell instanceof Pellet) {
+					game.world.pellets.splice(game.world.pellets.indexOf(cell), 1);
+				}
 			}
 			cell.eaten = true;
 		}
