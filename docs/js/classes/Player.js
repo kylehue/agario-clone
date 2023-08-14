@@ -35,10 +35,9 @@ class Player {
 	}
 
 	checkActions() {
-		if (keyIsPressed) {
-			if (keyCode == 32) {
-				this.split();
-			}
+		if (keyIsPressed && keyCode == 32) {
+			this.split();
+			keyIsPressed = false;
 		}
 
 		if (keyIsDown(87)) {
